@@ -1,7 +1,10 @@
-import { isUpToDate } from '@directus/update-check';
+import { useEnv } from '@directus/env';
+import { toBoolean } from '@directus/utils';
+import { getNodeEnv } from '@directus/utils/node';
 import type { TerminusOptions } from '@godaddy/terminus';
 import { createTerminus } from '@godaddy/terminus';
 import type { Request } from 'express';
+import type { ListenOptions } from 'net';
 import * as http from 'http';
 import * as https from 'https';
 import { once } from 'lodash-es';
@@ -10,12 +13,24 @@ import url from 'url';
 import createApp from './app.js';
 import getDatabase from './database/index.js';
 import emitter from './emitter.js';
-import env from './env.js';
-import logger from './logger.js';
+import { useLogger } from './logger/index.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
-import * as pkg from './utils/package.js';
+import { getIPFromReq } from './utils/get-ip-from-req.js';
+import { getAddress } from './utils/get-address.js';
+import {
+	createLogsController,
+	createSubscriptionController,
+	createWebSocketController,
+	getLogsController,
+	getSubscriptionController,
+	getWebSocketController,
+} from './websocket/controllers/index.js';
+import { startWebSocketHandlers } from './websocket/handlers/index.js';
 
 export let SERVER_ONLINE = true;
+
+const env = useEnv();
+const logger = useLogger();
 
 export async function createServer(): Promise<http.Server> {
 	const server = http.createServer(await createApp());
@@ -69,7 +84,7 @@ export async function createServer(): Promise<http.Server> {
 					size: metrics.out,
 					headers: res.getHeaders(),
 				},
-				ip: req.headers['x-forwarded-for'] || req.socket?.remoteAddress,
+				ip: getIPFromReq(req),
 				duration: elapsedMilliseconds.toFixed(),
 			};
 
@@ -84,10 +99,18 @@ export async function createServer(): Promise<http.Server> {
 		res.once('close', complete.bind(null, false));
 	});
 
+	if (toBoolean(env['WEBSOCKETS_ENABLED']) === true) {
+		createSubscriptionController(server);
+		createWebSocketController(server);
+		createLogsController(server);
+
+		startWebSocketHandlers();
+	}
+
 	const terminusOptions: TerminusOptions = {
 		timeout:
-			env['SERVER_SHUTDOWN_TIMEOUT'] >= 0 && env['SERVER_SHUTDOWN_TIMEOUT'] < Infinity
-				? env['SERVER_SHUTDOWN_TIMEOUT']
+			(env['SERVER_SHUTDOWN_TIMEOUT'] as number) >= 0 && (env['SERVER_SHUTDOWN_TIMEOUT'] as number) < Infinity
+				? (env['SERVER_SHUTDOWN_TIMEOUT'] as number)
 				: 1000,
 		signals: ['SIGINT', 'SIGTERM', 'SIGHUP'],
 		beforeShutdown,
@@ -100,7 +123,7 @@ export async function createServer(): Promise<http.Server> {
 	return server;
 
 	async function beforeShutdown() {
-		if (env['NODE_ENV'] !== 'development') {
+		if (getNodeEnv() !== 'development') {
 			logger.info('Shutting down...');
 		}
 
@@ -108,6 +131,10 @@ export async function createServer(): Promise<http.Server> {
 	}
 
 	async function onSignal() {
+		getSubscriptionController()?.terminate();
+		getWebSocketController()?.terminate();
+		getLogsController()?.terminate();
+
 		const database = getDatabase();
 		await database.destroy();
 
@@ -122,10 +149,10 @@ export async function createServer(): Promise<http.Server> {
 				database: getDatabase(),
 				schema: null,
 				accountability: null,
-			}
+			},
 		);
 
-		if (env['NODE_ENV'] !== 'development') {
+		if (getNodeEnv() !== 'development') {
 			logger.info('Directus shut down OK. Bye bye!');
 		}
 	}
@@ -134,22 +161,30 @@ export async function createServer(): Promise<http.Server> {
 export async function startServer(): Promise<void> {
 	const server = await createServer();
 
-	const host = env['HOST'];
-	const port = env['PORT'];
+	const host = env['HOST'] as string;
+	const path = env['UNIX_SOCKET_PATH'] as string | undefined;
+	const port = env['PORT'] as string;
+
+	let listenOptions: ListenOptions;
+
+	if (path) {
+		listenOptions = { path };
+	} else {
+		listenOptions = {
+			host,
+			port: parseInt(port),
+		};
+	}
 
 	server
-		.listen(port, host, () => {
-			isUpToDate(pkg.name, pkg.version)
-				.then((update) => {
-					if (update) {
-						logger.warn(`Update available: ${pkg.version} -> ${update}`);
-					}
-				})
-				.catch(() => {
-					// No need to log/warn here. The update message is only an informative nice-to-have
-				});
+		.listen(listenOptions, () => {
+			const protocol = server instanceof https.Server ? 'https' : 'http';
 
-			logger.info(`Server started at http://${host}:${port}`);
+			logger.info(
+				`Server started at ${listenOptions.port ? `${protocol}://${getAddress(server)}` : getAddress(server)}`,
+			);
+
+			process.send?.('ready');
 
 			emitter.emitAction(
 				'server.start',
@@ -158,12 +193,12 @@ export async function startServer(): Promise<void> {
 					database: getDatabase(),
 					schema: null,
 					accountability: null,
-				}
+				},
 			);
 		})
 		.once('error', (err: any) => {
 			if (err?.code === 'EADDRINUSE') {
-				logger.error(`Port ${port} is already in use`);
+				logger.error(`${listenOptions.port ? `Port ${listenOptions.port}` : getAddress(server)} is already in use`);
 				process.exit(1);
 			} else {
 				throw err;

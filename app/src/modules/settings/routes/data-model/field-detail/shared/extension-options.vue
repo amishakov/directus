@@ -1,35 +1,6 @@
-<template>
-	<v-notice v-if="usesCustomComponent === false && optionsFields.length === 0">
-		{{ t('no_options_available') }}
-	</v-notice>
-
-	<v-form
-		v-else-if="usesCustomComponent === false"
-		v-model="optionsValues"
-		class="extension-options"
-		:fields="optionsFields"
-		:initial-values="disabled ? optionsValues : null"
-		:disabled="disabled"
-		:raw-editor-enabled="rawEditorEnabled"
-		primary-key="+"
-	/>
-
-	<v-error-boundary v-else :name="`${type}-options-${extensionInfo!.id}`">
-		<component
-			:is="`${type}-options-${extensionInfo!.id}`"
-			:value="optionsValues"
-			:collection="collection"
-			:field="field"
-			@input="optionsValues = $event"
-		/>
-		<template #fallback>
-			<v-notice type="warning">{{ t('unexpected_error') }}</v-notice>
-		</template>
-	</v-error-boundary>
-</template>
-
 <script setup lang="ts">
 import { useExtension } from '@/composables/use-extension';
+import { isVueComponent } from '@directus/utils';
 import { storeToRefs } from 'pinia';
 import { computed, toRefs } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -47,7 +18,7 @@ const props = withDefaults(
 	}>(),
 	{
 		modelValue: () => ({}),
-	}
+	},
 );
 
 const emit = defineEmits(['update:modelValue']);
@@ -64,7 +35,7 @@ const extensionInfo = useExtension(type, extension);
 const usesCustomComponent = computed(() => {
 	if (!extensionInfo.value) return false;
 
-	return extensionInfo.value.options && 'render' in extensionInfo.value.options;
+	return isVueComponent(extensionInfo.value.options);
 });
 
 const optionsFields = computed(() => {
@@ -100,3 +71,33 @@ const optionsValues = computed({
 	},
 });
 </script>
+
+<template>
+	<v-notice v-if="usesCustomComponent === false && optionsFields.length === 0">
+		{{ t('no_options_available') }}
+	</v-notice>
+
+	<v-form
+		v-else-if="usesCustomComponent === false"
+		v-model="optionsValues"
+		class="extension-options"
+		:fields="optionsFields"
+		:initial-values="disabled ? optionsValues : null"
+		:disabled="disabled"
+		:raw-editor-enabled="rawEditorEnabled"
+		primary-key="+"
+	/>
+
+	<v-error-boundary v-else :name="`${type}-options-${extensionInfo!.id}`">
+		<component
+			:is="`${type}-options-${extensionInfo!.id}`"
+			:value="optionsValues"
+			:collection="collection"
+			:field="field"
+			@input="optionsValues = $event"
+		/>
+		<template #fallback>
+			<v-notice type="warning">{{ t('unexpected_error') }}</v-notice>
+		</template>
+	</v-error-boundary>
+</template>

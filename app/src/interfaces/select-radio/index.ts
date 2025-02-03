@@ -1,4 +1,4 @@
-import { defineInterface } from '@directus/utils';
+import { defineInterface } from '@directus/extensions';
 import PreviewSVG from './preview.svg?raw';
 import InterfaceSelectRadio from './select-radio.vue';
 
@@ -95,7 +95,7 @@ export default defineInterface({
 				},
 			},
 			schema: {
-				default_value: 'false',
+				default_value: false,
 			},
 		},
 	],

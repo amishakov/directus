@@ -1,4 +1,4 @@
-import { defineInterface } from '@directus/utils';
+import { defineInterface } from '@directus/extensions';
 import PreviewSVG from './preview.svg?raw';
 import InterfaceSelectDropdown from './select-dropdown.vue';
 
@@ -8,7 +8,7 @@ export default defineInterface({
 	description: '$t:interfaces.select-dropdown.description',
 	icon: 'arrow_drop_down_circle',
 	component: InterfaceSelectDropdown,
-	types: ['string', 'integer', 'float', 'bigInteger'],
+	types: ['string', 'integer', 'float', 'decimal', 'bigInteger'],
 	group: 'selection',
 	preview: PreviewSVG,
 	options: ({ field }) => [
@@ -50,6 +50,24 @@ export default defineInterface({
 								width: 'half',
 							},
 						},
+						{
+							field: 'icon',
+							name: '$t:icon',
+							type: 'string',
+							meta: {
+								interface: 'select-icon',
+								width: 'half',
+							},
+						},
+						{
+							field: 'color',
+							name: '$t:color',
+							type: 'string',
+							meta: {
+								interface: 'select-color',
+								width: 'half',
+							},
+						},
 					],
 				},
 			},
@@ -66,7 +84,7 @@ export default defineInterface({
 				},
 			},
 			schema: {
-				default_value: 'false',
+				default_value: false,
 			},
 		},
 		{
@@ -81,7 +99,7 @@ export default defineInterface({
 				},
 			},
 			schema: {
-				default_value: 'false',
+				default_value: false,
 			},
 		},
 		{

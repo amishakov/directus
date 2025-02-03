@@ -3,7 +3,7 @@ import * as setLanguageDefault from '@/lang/set-language';
 import { User } from '@directus/types';
 import { createTestingPinia } from '@pinia/testing';
 import { setActivePinia } from 'pinia';
-import { afterEach, beforeAll, beforeEach, describe, expect, SpyInstance, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi, type MockInstance } from 'vitest';
 import { Auth, Info, useServerStore } from './server';
 import { useUserStore } from './user';
 
@@ -12,7 +12,7 @@ beforeEach(() => {
 		createTestingPinia({
 			createSpy: vi.fn,
 			stubActions: false,
-		})
+		}),
 	);
 });
 
@@ -23,23 +23,16 @@ const mockServerInfo: Info = {
 		project_logo: null,
 		project_color: null,
 		default_language: 'de-DE',
+		default_appearance: 'auto',
+		default_theme_light: null,
+		default_theme_dark: null,
+		theme_light_overrides: null,
+		theme_dark_overrides: null,
 		public_foreground: null,
 		public_background: null,
+		public_favicon: null,
 		public_note: null,
 		custom_css: null,
-	},
-	directus: {
-		version: '10.10.10',
-	},
-	node: {
-		version: '20.0.0',
-		uptime: 123,
-	},
-	os: {
-		type: 'Test OS',
-		version: '10.10.10',
-		uptime: 10000,
-		totalmem: 12345678,
 	},
 };
 
@@ -58,11 +51,11 @@ const mockAdminUserWithLanguage = {
 	language: 'zh-CN',
 } as User;
 
-let apiGetSpy: SpyInstance;
-let replaceQueueSpy: SpyInstance;
-let setLanguageSpy: SpyInstance;
+let apiGetSpy: MockInstance;
+let replaceQueueSpy: MockInstance;
+let setLanguageSpy: MockInstance;
 
-beforeAll(() => {
+beforeEach(() => {
 	apiGetSpy = vi.spyOn(api, 'get');
 	replaceQueueSpy = vi.spyOn(apiFunctions, 'replaceQueue').mockResolvedValue();
 	setLanguageSpy = vi.spyOn(setLanguageDefault, 'setLanguage').mockResolvedValue(true);
@@ -83,10 +76,12 @@ describe('hydrate action', async () => {
 				});
 			}
 
-			if (path === '/auth') {
+			if (path.startsWith('/auth')) {
 				// stub as auth is not tested here
 				return Promise.resolve({ data: {} });
 			}
+
+			return;
 		});
 
 		const serverStore = useServerStore();
@@ -102,7 +97,7 @@ describe('hydrate action', async () => {
 				return Promise.resolve({ data: {} });
 			}
 
-			if (path === '/auth') {
+			if (path.startsWith('/auth')) {
 				return Promise.resolve({
 					data: {
 						data: mockAuthProviders,
@@ -110,6 +105,8 @@ describe('hydrate action', async () => {
 					},
 				});
 			}
+
+			return;
 		});
 
 		const serverStore = useServerStore();
@@ -131,10 +128,12 @@ describe('hydrate action', async () => {
 				return Promise.resolve({ data: {} });
 			}
 
-			if (path === '/auth') {
+			if (path.startsWith('/auth')) {
 				// stub as auth is not tested here
 				return Promise.resolve({ data: {} });
 			}
+
+			return;
 		});
 
 		const serverStore = useServerStore();
@@ -153,10 +152,12 @@ describe('hydrate action', async () => {
 				});
 			}
 
-			if (path === '/auth') {
+			if (path.startsWith('/auth')) {
 				// stub as auth is not tested here
 				return Promise.resolve({ data: {} });
 			}
+
+			return;
 		});
 
 		const serverStore = useServerStore();
@@ -175,10 +176,12 @@ describe('hydrate action', async () => {
 				});
 			}
 
-			if (path === '/auth') {
+			if (path.startsWith('/auth')) {
 				// stub as auth is not tested here
 				return Promise.resolve({ data: {} });
 			}
+
+			return;
 		});
 
 		const userStore = useUserStore();
@@ -200,10 +203,12 @@ describe('hydrate action', async () => {
 				});
 			}
 
-			if (path === '/auth') {
+			if (path.startsWith('/auth')) {
 				// stub as auth is not tested here
 				return Promise.resolve({ data: {} });
 			}
+
+			return;
 		});
 
 		const userStore = useUserStore();
@@ -225,10 +230,12 @@ describe('hydrate action', async () => {
 				});
 			}
 
-			if (path === '/auth') {
+			if (path.startsWith('/auth')) {
 				// stub as auth is not tested here
 				return Promise.resolve({ data: {} });
 			}
+
+			return;
 		});
 
 		const userStore = useUserStore();
@@ -250,10 +257,12 @@ describe('hydrate action', async () => {
 				});
 			}
 
-			if (path === '/auth') {
+			if (path.startsWith('/auth')) {
 				// stub as auth is not tested here
 				return Promise.resolve({ data: {} });
 			}
+
+			return;
 		});
 
 		const serverStore = useServerStore();
@@ -272,10 +281,12 @@ describe('hydrate action', async () => {
 				});
 			}
 
-			if (path === '/auth') {
+			if (path.startsWith('/auth')) {
 				// stub as auth is not tested here
 				return Promise.resolve({ data: {} });
 			}
+
+			return;
 		});
 
 		const serverStore = useServerStore();
@@ -301,19 +312,21 @@ describe('hydrate action', async () => {
 				});
 			}
 
-			if (path === '/auth') {
+			if (path.startsWith('/auth')) {
 				// stub as auth is not tested here
 				return Promise.resolve({ data: {} });
 			}
+
+			return;
 		});
 
 		const serverStore = useServerStore();
 		await serverStore.hydrate();
 
 		expect(replaceQueueSpy).toHaveBeenCalledWith({
-			intervalCap: mockRateLimit.points - 10,
-			interval: mockRateLimit.duration * 1000,
-			carryoverConcurrencyCount: true,
+			intervalCap: 1,
+			// Interval for 1 point (duration * 1000(ms) / points)
+			interval: 500,
 		});
 	});
 });
@@ -329,7 +342,7 @@ describe('dehydrate action', () => {
 				});
 			}
 
-			if (path === '/auth') {
+			if (path.startsWith('/auth')) {
 				return Promise.resolve({
 					data: {
 						data: mockAuthProviders,
@@ -337,6 +350,8 @@ describe('dehydrate action', () => {
 					},
 				});
 			}
+
+			return;
 		});
 
 		const serverStore = useServerStore();
@@ -344,9 +359,6 @@ describe('dehydrate action', () => {
 		serverStore.dehydrate();
 
 		expect(serverStore.info.project).toEqual(null);
-		expect(serverStore.info.directus).toEqual(undefined);
-		expect(serverStore.info.node).toEqual(undefined);
-		expect(serverStore.info.os).toEqual(undefined);
 		expect(serverStore.auth.providers).toEqual([]);
 		expect(serverStore.auth.disableDefault).toEqual(false);
 	});

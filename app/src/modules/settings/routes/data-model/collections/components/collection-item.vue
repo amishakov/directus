@@ -1,139 +1,30 @@
-<template>
-	<div class="collection-item">
-		<v-list-item
-			block
-			dense
-			clickable
-			:class="{ hidden: collection.meta?.hidden }"
-			:to="collection.schema ? `/settings/data-model/${collection.collection}` : undefined"
-			@click.self="!collection.schema ? $emit('editCollection', collection) : null"
-		>
-			<v-list-item-icon>
-				<v-icon v-if="!disableDrag" class="drag-handle" name="drag_handle" />
-			</v-list-item-icon>
-			<div class="collection-item-detail">
-				<v-icon
-					:color="collection.meta?.hidden ? 'var(--foreground-subdued)' : collection.color ?? 'var(--primary)'"
-					class="collection-icon"
-					:name="collection.meta?.hidden ? 'visibility_off' : collection.icon"
-				/>
-				<span ref="collectionName" class="collection-name">{{ collection.collection }}</span>
-				<span v-if="collection.meta?.note" class="collection-note">{{ collection.meta.note }}</span>
-			</div>
-			<template v-if="collection.type === 'alias' || nestedCollections.length">
-				<v-progress-circular v-if="collapseLoading" small indeterminate />
-				<v-icon
-					v-else-if="nestedCollections.length"
-					v-tooltip="collapseTooltip"
-					:name="collapseIcon"
-					:clickable="nestedCollections.length > 0"
-					@click.stop.prevent="toggleCollapse"
-				/>
-				<v-icon v-else :name="collapseIcon" />
-			</template>
-			<collection-options :collection="collection" />
-		</v-list-item>
-
-		<draggable
-			:force-fallback="true"
-			:model-value="nestedCollections"
-			:group="{ name: 'collections' }"
-			:swap-threshold="0.3"
-			class="drag-container"
-			item-key="collection"
-			handle=".drag-handle"
-			@update:model-value="onGroupSortChange"
-		>
-			<template #item="{ element }">
-				<collection-item
-					:collection="element"
-					:collections="collections"
-					@edit-collection="$emit('editCollection', $event)"
-					@set-nested-sort="$emit('setNestedSort', $event)"
-				/>
-			</template>
-		</draggable>
-	</div>
-</template>
-
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import CollectionOptions from './collection-options.vue';
 import { Collection } from '@/types/collections';
-import Draggable from 'vuedraggable';
-import { useCollectionsStore } from '@/stores/collections';
-import { DeepPartial } from '@directus/types';
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { unexpectedError } from '@/utils/unexpected-error';
+import Draggable from 'vuedraggable';
+import { CollectionTree } from '../collections.vue';
+import CollectionOptions from './collection-options.vue';
 
 const props = defineProps<{
 	collection: Collection;
 	collections: Collection[];
+	isCollapsed: boolean;
+	visibilityTree: CollectionTree;
 	disableDrag?: boolean;
 }>();
 
-const emit = defineEmits(['setNestedSort', 'editCollection']);
+const emit = defineEmits(['setNestedSort', 'editCollection', 'toggleCollapse']);
 
-const collectionsStore = useCollectionsStore();
 const { t } = useI18n();
 
+const toggleCollapse = () => {
+	emit('toggleCollapse', props.collection.collection);
+};
+
 const nestedCollections = computed(() =>
-	props.collections.filter((collection) => collection.meta?.group === props.collection.collection)
+	props.collections.filter((collection) => collection.meta?.group === props.collection.collection),
 );
-
-const collapseIcon = computed(() => {
-	switch (props.collection.meta?.collapse) {
-		case 'open':
-			return 'folder_open';
-		case 'closed':
-			return 'folder';
-		case 'locked':
-			return 'folder_lock';
-	}
-
-	return undefined;
-});
-
-const collapseTooltip = computed(() => {
-	switch (props.collection.meta?.collapse) {
-		case 'open':
-			return t('start_open');
-		case 'closed':
-			return t('start_collapsed');
-		case 'locked':
-			return t('always_open');
-	}
-
-	return undefined;
-});
-
-const collapseLoading = ref(false);
-
-async function toggleCollapse() {
-	if (collapseLoading.value === true) return;
-
-	collapseLoading.value = true;
-
-	let newCollapse: 'open' | 'closed' | 'locked' = 'open';
-
-	if (props.collection.meta?.collapse === 'open') {
-		newCollapse = 'closed';
-	} else if (props.collection.meta?.collapse === 'closed') {
-		newCollapse = 'locked';
-	}
-
-	try {
-		await update({ meta: { collapse: newCollapse } });
-	} catch (err: any) {
-		unexpectedError(err);
-	} finally {
-		collapseLoading.value = false;
-	}
-}
-
-async function update(updates: DeepPartial<Collection>) {
-	await collectionsStore.updateCollection(props.collection.collection, updates);
-}
 
 function onGroupSortChange(collections: Collection[]) {
 	const updates = collections.map((collection) => ({
@@ -147,7 +38,80 @@ function onGroupSortChange(collections: Collection[]) {
 }
 </script>
 
-<style scoped>
+<template>
+	<div v-show="visibilityTree.visible" class="collection-item">
+		<v-list-item
+			block
+			dense
+			clickable
+			:class="{ hidden: collection.meta?.hidden }"
+			:to="collection.schema ? `/settings/data-model/${collection.collection}` : undefined"
+			@click.self="!collection.schema ? $emit('editCollection', collection) : null"
+		>
+			<v-list-item-icon>
+				<v-icon v-if="!disableDrag" class="drag-handle" name="drag_handle" />
+			</v-list-item-icon>
+			<div class="collection-item-detail">
+				<v-icon
+					:color="
+						collection.meta?.hidden ? 'var(--theme--foreground-subdued)' : collection.color ?? 'var(--theme--primary)'
+					"
+					class="collection-icon"
+					:name="collection.meta?.hidden ? 'visibility_off' : collection.icon"
+				/>
+				<v-highlight
+					ref="collectionName"
+					:query="visibilityTree.search"
+					:text="collection.collection"
+					class="collection-name"
+				/>
+				<span v-if="collection.meta?.note" class="collection-note">{{ collection.meta.note }}</span>
+			</div>
+
+			<v-icon
+				v-if="nestedCollections?.length"
+				v-tooltip="!isCollapsed ? t('collapse') : t('expand')"
+				:name="!isCollapsed ? 'unfold_less' : 'unfold_more'"
+				clickable
+				class="collapse-toggle"
+				@click.stop.prevent="toggleCollapse"
+			/>
+			<collection-options
+				:has-nested-collections="nestedCollections.length > 0"
+				:collection="collection"
+				@collection-toggle="toggleCollapse"
+			/>
+		</v-list-item>
+
+		<transition-expand class="collection-items">
+			<draggable
+				v-if="!isCollapsed"
+				:model-value="nestedCollections"
+				:group="{ name: 'collections' }"
+				:swap-threshold="0.3"
+				class="drag-container"
+				item-key="collection"
+				handle=".drag-handle"
+				v-bind="{ 'force-fallback': true }"
+				@update:model-value="onGroupSortChange"
+			>
+				<template #item="{ element }">
+					<collection-item
+						:collection="element"
+						:collections="collections"
+						:is-collapsed="element.isCollapsed"
+						:visibility-tree="visibilityTree.findChild(element.collection)!"
+						@edit-collection="$emit('editCollection', $event)"
+						@set-nested-sort="$emit('setNestedSort', $event)"
+						@toggle-collapse="$emit('toggleCollapse', $event)"
+					/>
+				</template>
+			</draggable>
+		</transition-expand>
+	</div>
+</template>
+
+<style scoped lang="scss">
 .drag-container {
 	margin-top: 8px;
 	margin-left: 20px;
@@ -163,7 +127,7 @@ function onGroupSortChange(collections: Collection[]) {
 	align-items: center;
 	height: 100%;
 	overflow: hidden;
-	font-family: var(--family-monospace);
+	font-family: var(--theme--fonts--monospace--font-family);
 	pointer-events: none;
 }
 
@@ -172,13 +136,13 @@ function onGroupSortChange(collections: Collection[]) {
 }
 
 .hidden .collection-name {
-	color: var(--foreground-subdued);
+	color: var(--theme--foreground-subdued);
 }
 
 .collection-note {
 	margin-left: 16px;
 	overflow: hidden;
-	color: var(--foreground-subdued);
+	color: var(--theme--foreground-subdued);
 	white-space: nowrap;
 	text-overflow: ellipsis;
 	opacity: 0;
@@ -195,5 +159,13 @@ function onGroupSortChange(collections: Collection[]) {
 
 .drag-handle {
 	cursor: grab;
+}
+
+.collapse-toggle {
+	--v-icon-color: var(--theme--foreground-subdued);
+
+	&:hover {
+		--v-icon-color: var(--theme--foreground);
+	}
 }
 </style>

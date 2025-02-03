@@ -1,5 +1,5 @@
 import { DeepPartial, Field } from '@directus/types';
-import { defineInterface } from '@directus/utils';
+import { defineInterface } from '@directus/extensions';
 import InterfaceListO2M from './list-o2m.vue';
 import PreviewSVG from './preview.svg?raw';
 
@@ -101,7 +101,7 @@ export default defineInterface({
 				field: 'enableCreate',
 				name: '$t:creating_items',
 				schema: {
-					default_value: 'true',
+					default_value: true,
 				},
 				meta: {
 					interface: 'boolean',
@@ -115,7 +115,7 @@ export default defineInterface({
 				field: 'enableSelect',
 				name: '$t:selecting_items',
 				schema: {
-					default_value: 'true',
+					default_value: true,
 				},
 				meta: {
 					interface: 'boolean',
@@ -134,7 +134,7 @@ export default defineInterface({
 					width: 'half',
 				},
 				schema: {
-					default_value: '15',
+					default_value: 15,
 				},
 			},
 			{
@@ -159,10 +159,46 @@ export default defineInterface({
 				},
 			},
 			{
+				field: 'sort',
+				name: '$t:sort',
+				type: 'string',
+				meta: {
+					interface: 'system-field',
+					options: {
+						collectionName: collection,
+					},
+					width: 'half',
+				},
+			},
+			{
+				field: 'sortDirection',
+				name: '$t:sort_direction',
+				schema: {
+					default_value: '+',
+				},
+				type: 'string',
+				meta: {
+					interface: 'select-dropdown',
+					options: {
+						choices: [
+							{
+								text: '$t:sort_asc',
+								value: '+',
+							},
+							{
+								text: '$t:sort_desc',
+								value: '-',
+							},
+						],
+					},
+					width: 'half',
+				},
+			},
+			{
 				field: 'enableSearchFilter',
 				name: '$t:search_filter',
 				schema: {
-					default_value: 'false',
+					default_value: false,
 				},
 				meta: {
 					interface: 'boolean',
@@ -187,7 +223,7 @@ export default defineInterface({
 				field: 'enableLink',
 				name: '$t:item_link',
 				schema: {
-					default_value: 'false',
+					default_value: false,
 				},
 				meta: {
 					interface: 'boolean',

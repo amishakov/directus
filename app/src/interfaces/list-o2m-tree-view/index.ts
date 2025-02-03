@@ -1,4 +1,4 @@
-import { defineInterface } from '@directus/utils';
+import { defineInterface } from '@directus/extensions';
 import InterfaceListO2MTreeView from './list-o2m-tree-view.vue';
 import PreviewSVG from './preview.svg?raw';
 
@@ -31,7 +31,7 @@ export default defineInterface({
 				field: 'enableCreate',
 				name: '$t:creating_items',
 				schema: {
-					default_value: 'true',
+					default_value: true,
 				},
 				meta: {
 					interface: 'boolean',
@@ -45,7 +45,7 @@ export default defineInterface({
 				field: 'enableSelect',
 				name: '$t:selecting_items',
 				schema: {
-					default_value: 'true',
+					default_value: true,
 				},
 				meta: {
 					interface: 'boolean',

@@ -1,11 +1,11 @@
 import { setLanguage } from '@/lang/set-language';
+import { useServerStore } from '@/stores/server';
+import { useSettingsStore } from '@/stores/settings';
+import { useUserStore } from '@/stores/user';
+import { useAppStore } from '@directus/stores';
 import { createTestingPinia } from '@pinia/testing';
 import { setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { useUserStore } from '@/stores/user';
-import { useServerStore } from '@/stores/server';
-import { useSettingsStore } from '@/stores/settings';
-import { useAppStore } from '@/stores/app';
 
 import { hydrate } from './hydrate';
 import { defaultBasemap } from './utils/geometry/basemap';
@@ -18,7 +18,7 @@ beforeEach(() => {
 	setActivePinia(
 		createTestingPinia({
 			createSpy: vi.fn,
-		})
+		}),
 	);
 });
 
@@ -33,7 +33,7 @@ describe('setLanguage', () => {
 
 		await hydrate();
 
-		expect(vi.mocked(setLanguage).mock.calls[0][0]).not.toBeNull();
+		expect(vi.mocked(setLanguage).mock.calls[0]?.[0]).not.toBeNull();
 	});
 
 	test('should not be called with null user language (in runtime)', async () => {
@@ -42,7 +42,7 @@ describe('setLanguage', () => {
 
 		await hydrate();
 
-		expect(vi.mocked(setLanguage).mock.calls[0][0]).not.toBeNull();
+		expect(vi.mocked(setLanguage).mock.calls[0]?.[0]).not.toBeNull();
 	});
 });
 

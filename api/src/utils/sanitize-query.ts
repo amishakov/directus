@@ -1,18 +1,30 @@
-import type { Accountability, Aggregate, Filter, Query } from '@directus/types';
+import { useEnv } from '@directus/env';
+import { InvalidQueryError } from '@directus/errors';
+import type { Accountability, Aggregate, Query } from '@directus/types';
 import { parseFilter, parseJSON } from '@directus/utils';
 import { flatten, get, isPlainObject, merge, set } from 'lodash-es';
-import logger from '../logger.js';
+import { useLogger } from '../logger/index.js';
 import { Meta } from '../types/index.js';
 
 export function sanitizeQuery(rawQuery: Record<string, any>, accountability?: Accountability | null): Query {
+	const env = useEnv();
+
 	const query: Query = {};
+
+	const hasMaxLimit =
+		'QUERY_LIMIT_MAX' in env &&
+		Number(env['QUERY_LIMIT_MAX']) >= 0 &&
+		!Number.isNaN(Number(env['QUERY_LIMIT_MAX'])) &&
+		Number.isFinite(Number(env['QUERY_LIMIT_MAX']));
 
 	if (rawQuery['limit'] !== undefined) {
 		const limit = sanitizeLimit(rawQuery['limit']);
 
 		if (typeof limit === 'number') {
-			query.limit = limit;
+			query.limit = limit === -1 && hasMaxLimit ? Number(env['QUERY_LIMIT_MAX']) : limit;
 		}
+	} else if (hasMaxLimit) {
+		query.limit = Math.min(Number(env['QUERY_LIMIT_DEFAULT']), Number(env['QUERY_LIMIT_MAX']));
 	}
 
 	if (rawQuery['fields']) {
@@ -49,6 +61,15 @@ export function sanitizeQuery(rawQuery: Record<string, any>, accountability?: Ac
 
 	if (rawQuery['search'] && typeof rawQuery['search'] === 'string') {
 		query.search = rawQuery['search'];
+	}
+
+	if (rawQuery['version']) {
+		query.version = rawQuery['version'];
+
+		// whether or not to merge the relational results
+		query.versionRaw = Boolean(
+			'versionRaw' in rawQuery && (rawQuery['versionRaw'] === '' || rawQuery['versionRaw'] === 'true'),
+		);
 	}
 
 	if (rawQuery['export']) {
@@ -90,17 +111,21 @@ function sanitizeSort(rawSort: any) {
 	if (typeof rawSort === 'string') fields = rawSort.split(',');
 	else if (Array.isArray(rawSort)) fields = rawSort as string[];
 
+	fields = fields.map((field) => field.trim());
+
 	return fields;
 }
 
 function sanitizeAggregate(rawAggregate: any): Aggregate {
+	const logger = useLogger();
+
 	let aggregate: Aggregate = rawAggregate;
 
 	if (typeof rawAggregate === 'string') {
 		try {
 			aggregate = parseJSON(rawAggregate);
 		} catch {
-			logger.warn('Invalid value passed for filter query parameter.');
+			logger.warn('Invalid value passed for aggregate query parameter.');
 		}
 	}
 
@@ -113,17 +138,21 @@ function sanitizeAggregate(rawAggregate: any): Aggregate {
 }
 
 function sanitizeFilter(rawFilter: any, accountability: Accountability | null) {
-	let filters: Filter | null = rawFilter;
+	let filters = rawFilter;
 
-	if (typeof rawFilter === 'string') {
+	if (typeof filters === 'string') {
 		try {
-			filters = parseJSON(rawFilter);
+			filters = parseJSON(filters);
 		} catch {
-			logger.warn('Invalid value passed for filter query parameter.');
+			throw new InvalidQueryError({ reason: 'Invalid JSON for filter object' });
 		}
 	}
 
-	return parseFilter(filters, accountability);
+	try {
+		return parseFilter(filters, accountability);
+	} catch {
+		throw new InvalidQueryError({ reason: 'Invalid filter object' });
+	}
 }
 
 function sanitizeLimit(rawLimit: any) {
@@ -156,6 +185,8 @@ function sanitizeMeta(rawMeta: any) {
 }
 
 function sanitizeDeep(deep: Record<string, any>, accountability?: Accountability | null) {
+	const logger = useLogger();
+
 	const result: Record<string, any> = {};
 
 	if (typeof deep === 'string') {
@@ -171,20 +202,26 @@ function sanitizeDeep(deep: Record<string, any>, accountability?: Accountability
 	return result;
 
 	function parse(level: Record<string, any>, path: string[] = []) {
+		const subQuery: Record<string, any> = {};
 		const parsedLevel: Record<string, any> = {};
 
 		for (const [key, value] of Object.entries(level)) {
 			if (!key) break;
 
 			if (key.startsWith('_')) {
-				// Sanitize query only accepts non-underscore-prefixed query options
-				const parsedSubQuery = sanitizeQuery({ [key.substring(1)]: value }, accountability);
-				// ...however we want to keep them for the nested structure of deep, otherwise there's no
-				// way of knowing when to keep nesting and when to stop
-				const [parsedKey, parsedValue] = Object.entries(parsedSubQuery)[0]!;
-				parsedLevel[`_${parsedKey}`] = parsedValue;
+				// Collect all sub query parameters without the leading underscore
+				subQuery[key.substring(1)] = value;
 			} else if (isPlainObject(value)) {
 				parse(value, [...path, key]);
+			}
+		}
+
+		if (Object.keys(subQuery).length > 0) {
+			// Sanitize the entire sub query
+			const parsedSubQuery = sanitizeQuery(subQuery, accountability);
+
+			for (const [parsedKey, parsedValue] of Object.entries(parsedSubQuery)) {
+				parsedLevel[`_${parsedKey}`] = parsedValue;
 			}
 		}
 
@@ -195,12 +232,14 @@ function sanitizeDeep(deep: Record<string, any>, accountability?: Accountability
 }
 
 function sanitizeAlias(rawAlias: any) {
+	const logger = useLogger();
+
 	let alias: Record<string, string> = rawAlias;
 
 	if (typeof rawAlias === 'string') {
 		try {
 			alias = parseJSON(rawAlias);
-		} catch (err) {
+		} catch {
 			logger.warn('Invalid value passed for alias query parameter.');
 		}
 	}

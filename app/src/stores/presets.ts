@@ -1,5 +1,6 @@
 import api from '@/api';
 import { useUserStore } from '@/stores/user';
+import { fetchAll } from '@/utils/fetch-all';
 import { Preset } from '@directus/types';
 import { cloneDeep, merge, orderBy } from 'lodash';
 import { nanoid } from 'nanoid';
@@ -67,7 +68,7 @@ const systemDefaults: Record<string, Partial<Preset>> = {
 		layout_options: {
 			tabular: {
 				widths: {
-					action: 100,
+					action: 120,
 					collection: 210,
 					timestamp: 240,
 					user: 240,
@@ -80,7 +81,27 @@ const systemDefaults: Record<string, Partial<Preset>> = {
 		layout: 'tabular',
 		layout_query: {
 			tabular: {
+				sort: ['name'],
 				fields: ['icon', 'name', 'description'],
+			},
+		},
+		layout_options: {
+			tabular: {
+				widths: {
+					icon: 36,
+					name: 248,
+					description: 500,
+				},
+			},
+		},
+	},
+	directus_policies: {
+		collection: 'directus_policies',
+		layout: 'tabular',
+		layout_query: {
+			tabular: {
+				sort: ['name'],
+				fields: ['icon', 'name', 'app_access', 'admin_access', 'description'],
 			},
 		},
 		layout_options: {
@@ -113,6 +134,25 @@ const systemDefaults: Record<string, Partial<Preset>> = {
 			},
 		},
 	},
+	directus_presets: {
+		collection: 'directus_presets',
+		layout: 'tabular',
+		layout_query: {
+			tabular: {
+				fields: ['bookmark', 'collection', 'user', 'role'],
+			},
+		},
+		layout_options: {
+			tabular: {
+				widths: {
+					bookmark: 200,
+					collection: 200,
+					user: 200,
+					role: 200,
+				},
+			},
+		},
+	},
 };
 
 const currentUpdate: Record<number, string> = {};
@@ -130,7 +170,7 @@ export const usePresetsStore = defineStore({
 					(preset) => preset.user === null && preset.role === null,
 					(preset) => preset.user === null && preset.role !== null,
 					'bookmark',
-				]
+				],
 			);
 		},
 	},
@@ -144,31 +184,29 @@ export const usePresetsStore = defineStore({
 
 			const values = await Promise.all([
 				// All user saved bookmarks and presets
-				api.get(`/presets`, {
+				fetchAll<any>(`/presets`, {
 					params: {
 						'filter[user][_eq]': id,
-						limit: -1,
 					},
 				}),
-				// All role saved bookmarks and presets
-				api.get(`/presets`, {
-					params: {
-						'filter[role][_eq]': role.id,
-						'filter[user][_null]': true,
-						limit: -1,
-					},
-				}),
+				role?.id // All role saved bookmarks and presets
+					? fetchAll<any>(`/presets`, {
+							params: {
+								'filter[role][_eq]': role.id,
+								'filter[user][_null]': true,
+							},
+					  })
+					: Promise.resolve([]),
 				// All global saved bookmarks and presets
-				api.get(`/presets`, {
+				fetchAll<any>(`/presets`, {
 					params: {
 						'filter[role][_null]': true,
 						'filter[user][_null]': true,
-						limit: -1,
 					},
 				}),
 			]);
 
-			const presets = values.map((response) => response.data.data).flat();
+			const presets = values.flat();
 
 			// Inject system defaults if they don't exist
 			for (const systemCollection of Object.keys(systemDefaults)) {
@@ -242,7 +280,7 @@ export const usePresetsStore = defineStore({
 
 			const availablePresets = this.collectionPresets.filter((preset) => {
 				const userMatches = preset.user === userID || preset.user === null;
-				const roleMatches = preset.role === userRole.id || preset.role === null;
+				const roleMatches = preset.role === userRole?.id || preset.role === null;
 				const collectionMatches = preset.collection === collection;
 
 				// Filter out all bookmarks
@@ -260,7 +298,7 @@ export const usePresetsStore = defineStore({
 			const userPreset = availablePresets.find((preset) => preset.user === userID);
 			if (userPreset) return userPreset;
 
-			const rolePreset = availablePresets.find((preset) => preset.role === userRole.id);
+			const rolePreset = availablePresets.find((preset) => preset.role === userRole?.id);
 			if (rolePreset) return rolePreset;
 
 			// If the other two already came up empty, we can assume there's only one preset. That

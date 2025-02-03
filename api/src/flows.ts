@@ -1,44 +1,30 @@
-import * as sharedExceptions from '@directus/exceptions';
-import type {
-	Accountability,
-	ActionHandler,
-	FilterHandler,
-	Flow,
-	Operation,
-	OperationHandler,
-	SchemaOverview,
-} from '@directus/types';
 import { Action } from '@directus/constants';
-import { applyOptionsData, isValidJSON, parseJSON, toArray } from '@directus/utils';
-import fastRedact from 'fast-redact';
+import { useEnv } from '@directus/env';
+import { ForbiddenError } from '@directus/errors';
+import type { OperationHandler } from '@directus/extensions';
+import { isSystemCollection } from '@directus/system-data';
+import type { Accountability, ActionHandler, FilterHandler, Flow, Operation, SchemaOverview } from '@directus/types';
+import { applyOptionsData, getRedactedString, isValidJSON, parseJSON, toArray } from '@directus/utils';
 import type { Knex } from 'knex';
-import { omit, pick } from 'lodash-es';
+import { pick } from 'lodash-es';
 import { get } from 'micromustache';
-import { schedule, validate } from 'node-cron';
+import { useBus } from './bus/index.js';
 import getDatabase from './database/index.js';
 import emitter from './emitter.js';
-import env from './env.js';
-import * as exceptions from './exceptions/index.js';
-import logger from './logger.js';
-import { getMessenger } from './messenger.js';
+import { useLogger } from './logger/index.js';
 import { ActivityService } from './services/activity.js';
-import * as services from './services/index.js';
 import { FlowsService } from './services/flows.js';
+import * as services from './services/index.js';
 import { RevisionsService } from './services/revisions.js';
 import type { EventHandler } from './types/index.js';
 import { constructFlowTree } from './utils/construct-flow-tree.js';
 import { getSchema } from './utils/get-schema.js';
 import { JobQueue } from './utils/job-queue.js';
 import { mapValuesDeep } from './utils/map-values-deep.js';
-import { sanitizeError } from './utils/sanitize-error.js';
+import { redactObject } from './utils/redact-object.js';
+import { scheduleSynchronizedJob, validateCron } from './utils/schedule.js';
 
 let flowManager: FlowManager | undefined;
-
-const redactLogs = fastRedact({
-	censor: '--redacted--',
-	paths: ['*.headers.authorization', '*.access_token', '*.headers.cookie'],
-	serialize: false,
-});
 
 export function getFlowManager(): FlowManager {
 	if (flowManager) {
@@ -60,23 +46,32 @@ const ACCOUNTABILITY_KEY = '$accountability';
 const LAST_KEY = '$last';
 const ENV_KEY = '$env';
 
+interface FlowMessage {
+	type: 'reload';
+}
+
 class FlowManager {
 	private isLoaded = false;
 
-	private operations: Record<string, OperationHandler> = {};
+	private operations: Map<string, OperationHandler> = new Map();
 
 	private triggerHandlers: TriggerHandler[] = [];
 	private operationFlowHandlers: Record<string, any> = {};
 	private webhookFlowHandlers: Record<string, any> = {};
 
 	private reloadQueue: JobQueue;
+	private envs: Record<string, any>;
 
 	constructor() {
+		const env = useEnv();
+		const logger = useLogger();
+
 		this.reloadQueue = new JobQueue();
+		this.envs = env['FLOWS_ENV_ALLOW_LIST'] ? pick(env, toArray(env['FLOWS_ENV_ALLOW_LIST'] as string)) : {};
 
-		const messenger = getMessenger();
+		const messenger = useBus();
 
-		messenger.subscribe('flows', (event) => {
+		messenger.subscribe<FlowMessage>('flows', (event) => {
 			if (event['type'] === 'reload') {
 				this.reloadQueue.enqueue(async () => {
 					if (this.isLoaded) {
@@ -97,20 +92,22 @@ class FlowManager {
 	}
 
 	public async reload(): Promise<void> {
-		const messenger = getMessenger();
+		const messenger = useBus();
 
-		messenger.publish('flows', { type: 'reload' });
+		messenger.publish<FlowMessage>('flows', { type: 'reload' });
 	}
 
 	public addOperation(id: string, operation: OperationHandler): void {
-		this.operations[id] = operation;
+		this.operations.set(id, operation);
 	}
 
-	public clearOperations(): void {
-		this.operations = {};
+	public removeOperation(id: string): void {
+		this.operations.delete(id);
 	}
 
 	public async runOperationFlow(id: string, data: unknown, context: Record<string, unknown>): Promise<unknown> {
+		const logger = useLogger();
+
 		if (!(id in this.operationFlowHandlers)) {
 			logger.warn(`Couldn't find operation triggered flow with id "${id}"`);
 			return null;
@@ -124,11 +121,13 @@ class FlowManager {
 	public async runWebhookFlow(
 		id: string,
 		data: unknown,
-		context: Record<string, unknown>
-	): Promise<{ result: unknown; cacheEnabled: boolean }> {
+		context: Record<string, unknown>,
+	): Promise<{ result: unknown; cacheEnabled?: boolean }> {
+		const logger = useLogger();
+
 		if (!(id in this.webhookFlowHandlers)) {
 			logger.warn(`Couldn't find webhook or manual triggered flow with id "${id}"`);
-			throw new exceptions.ForbiddenException();
+			throw new ForbiddenError();
 		}
 
 		const handler = this.webhookFlowHandlers[id];
@@ -137,6 +136,8 @@ class FlowManager {
 	}
 
 	private async load(): Promise<void> {
+		const logger = useLogger();
+
 		const flowsService = new FlowsService({ knex: getDatabase(), schema: await getSchema() });
 
 		const flows = await flowsService.readByQuery({
@@ -158,7 +159,7 @@ class FlowManager {
 								if (!flow.options?.['collections']) return [];
 
 								return toArray(flow.options['collections']).map((collection: string) => {
-									if (collection.startsWith('directus_')) {
+									if (isSystemCollection(collection)) {
 										const action = scope.split('.')[1];
 										return collection.substring(9) + '.' + action;
 									}
@@ -181,7 +182,7 @@ class FlowManager {
 								accountability: context['accountability'],
 								database: context['database'],
 								getSchema: context['schema'] ? () => context['schema'] : getSchema,
-							}
+							},
 						);
 
 					events.forEach((event) => emitter.onFilter(event, handler));
@@ -206,8 +207,8 @@ class FlowManager {
 					});
 				}
 			} else if (flow.trigger === 'schedule') {
-				if (validate(flow.options['cron'])) {
-					const task = schedule(flow.options['cron'], async () => {
+				if (validateCron(flow.options['cron'])) {
+					const job = scheduleSynchronizedJob(flow.id, flow.options['cron'], async () => {
 						try {
 							await this.executeFlow(flow);
 						} catch (error: any) {
@@ -215,7 +216,7 @@ class FlowManager {
 						}
 					});
 
-					this.triggerHandlers.push({ id: flow.id, events: [{ type: flow.trigger, task }] });
+					this.triggerHandlers.push({ id: flow.id, events: [{ type: flow.trigger, job }] });
 				} else {
 					logger.warn(`Couldn't register cron trigger. Provided cron is invalid: ${flow.options['cron']}`);
 				}
@@ -246,30 +247,30 @@ class FlowManager {
 
 				this.webhookFlowHandlers[`${method}-${flow.id}`] = handler;
 			} else if (flow.trigger === 'manual') {
-				const handler = (data: unknown, context: Record<string, unknown>) => {
+				const handler = async (data: unknown, context: Record<string, unknown>) => {
 					const enabledCollections = flow.options?.['collections'] ?? [];
 					const targetCollection = (data as Record<string, any>)?.['body'].collection;
 
 					if (!targetCollection) {
 						logger.warn(`Manual trigger requires "collection" to be specified in the payload`);
-						throw new exceptions.ForbiddenException();
+						throw new ForbiddenError();
 					}
 
 					if (enabledCollections.length === 0) {
 						logger.warn(`There is no collections configured for this manual trigger`);
-						throw new exceptions.ForbiddenException();
+						throw new ForbiddenError();
 					}
 
 					if (!enabledCollections.includes(targetCollection)) {
 						logger.warn(`Specified collection must be one of: ${enabledCollections.join(', ')}.`);
-						throw new exceptions.ForbiddenException();
+						throw new ForbiddenError();
 					}
 
 					if (flow.options['async']) {
 						this.executeFlow(flow, data, context);
-						return undefined;
+						return { result: undefined };
 					} else {
-						return this.executeFlow(flow, data, context);
+						return { result: await this.executeFlow(flow, data, context) };
 					}
 				};
 
@@ -285,7 +286,7 @@ class FlowManager {
 
 	private async unload(): Promise<void> {
 		for (const trigger of this.triggerHandlers) {
-			trigger.events.forEach((event) => {
+			for (const event of trigger.events) {
 				switch (event.type) {
 					case 'filter':
 						emitter.offFilter(event.name, event.handler);
@@ -294,10 +295,10 @@ class FlowManager {
 						emitter.offAction(event.name, event.handler);
 						break;
 					case 'schedule':
-						event.task.stop();
+						await event.job.stop();
 						break;
 				}
-			});
+			}
 		}
 
 		this.triggerHandlers = [];
@@ -315,7 +316,7 @@ class FlowManager {
 			[TRIGGER_KEY]: data,
 			[LAST_KEY]: data,
 			[ACCOUNTABILITY_KEY]: context?.['accountability'] ?? null,
-			[ENV_KEY]: pick(env, env['FLOWS_ENV_ALLOW_LIST'] ? toArray(env['FLOWS_ENV_ALLOW_LIST']) : []),
+			[ENV_KEY]: this.envs,
 		};
 
 		let nextOperation = flow.operation;
@@ -368,8 +369,20 @@ class FlowManager {
 					collection: 'directus_flows',
 					item: flow.id,
 					data: {
-						steps: steps,
-						data: redactLogs(omit(keyedData, '$accountability.permissions')), // Permissions is a ton of data, and is just a copy of what's in the directus_permissions table
+						steps: steps.map((step) => redactObject(step, { values: this.envs }, getRedactedString)),
+						data: redactObject(
+							keyedData,
+							{
+								keys: [
+									['**', 'headers', 'authorization'],
+									['**', 'headers', 'cookie'],
+									['**', 'query', 'access_token'],
+									['**', 'payload', 'password'],
+								],
+								values: this.envs,
+							},
+							getRedactedString,
+						),
 					},
 				});
 			}
@@ -391,27 +404,29 @@ class FlowManager {
 	private async executeOperation(
 		operation: Operation,
 		keyedData: Record<string, unknown>,
-		context: Record<string, unknown> = {}
+		context: Record<string, unknown> = {},
 	): Promise<{
 		successor: Operation | null;
 		status: 'resolve' | 'reject' | 'unknown';
 		data: unknown;
 		options: Record<string, any> | null;
 	}> {
-		if (!(operation.type in this.operations)) {
+		const logger = useLogger();
+
+		if (!this.operations.has(operation.type)) {
 			logger.warn(`Couldn't find operation ${operation.type}`);
+
 			return { successor: null, status: 'unknown', data: null, options: null };
 		}
 
-		const handler = this.operations[operation.type]!;
+		const handler = this.operations.get(operation.type)!;
 
 		const options = applyOptionsData(operation.options, keyedData);
 
 		try {
 			let result = await handler(options, {
 				services,
-				exceptions: { ...exceptions, ...sharedExceptions },
-				env,
+				env: useEnv(),
 				database: getDatabase(),
 				logger,
 				getSchema,
@@ -434,8 +449,9 @@ class FlowManager {
 			let data;
 
 			if (error instanceof Error) {
-				// make sure we dont expose the stack trace
-				data = sanitizeError(error);
+				// Don't expose the stack trace to the next operation
+				delete error.stack;
+				data = error;
 			} else if (typeof error === 'string') {
 				// If the error is a JSON string, parse it and use that as the error data
 				data = isValidJSON(error) ? parseJSON(error) : error;

@@ -1,4 +1,4 @@
-import { defineInterface } from '@directus/utils';
+import { defineInterface } from '@directus/extensions';
 import InterfaceInputRichTextMD from './input-rich-text-md.vue';
 import PreviewSVG from './preview.svg?raw';
 
@@ -107,9 +107,6 @@ export default defineInterface({
 					interface: 'system-folder',
 					note: '$t:interfaces.system-folder.field_hint',
 				},
-				schema: {
-					default_value: undefined,
-				},
 			},
 			{
 				field: 'imageToken',
@@ -172,6 +169,24 @@ export default defineInterface({
 				},
 				schema: {
 					default_value: 'sans-serif',
+				},
+			},
+			{
+				field: 'defaultView',
+				name: '$t:interfaces.input-rich-text-md.default_view',
+				type: 'string',
+				meta: {
+					width: 'half',
+					interface: 'select-dropdown',
+					options: {
+						choices: [
+							{ text: '$t:interfaces.input-rich-text-md.default_view_editor', value: 'editor' },
+							{ text: '$t:interfaces.input-rich-text-md.default_view_preview', value: 'preview' },
+						],
+					},
+				},
+				schema: {
+					default_value: 'editor',
 				},
 			},
 			{

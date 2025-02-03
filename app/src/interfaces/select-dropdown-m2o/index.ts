@@ -1,4 +1,4 @@
-import { defineInterface } from '@directus/utils';
+import { defineInterface } from '@directus/extensions';
 import PreviewSVG from './preview.svg?raw';
 import InterfaceSelectDropdownM2O from './select-dropdown-m2o.vue';
 
@@ -30,7 +30,7 @@ export default defineInterface({
 				field: 'enableCreate',
 				name: '$t:creating_items',
 				schema: {
-					default_value: 'true',
+					default_value: true,
 				},
 				meta: {
 					interface: 'boolean',
@@ -44,7 +44,7 @@ export default defineInterface({
 				field: 'enableSelect',
 				name: '$t:selecting_items',
 				schema: {
-					default_value: 'true',
+					default_value: true,
 				},
 				meta: {
 					interface: 'boolean',
@@ -63,6 +63,20 @@ export default defineInterface({
 					options: {
 						collectionName: collection,
 					},
+				},
+			},
+			{
+				field: 'enableLink',
+				name: '$t:item_link',
+				schema: {
+					default_value: false,
+				},
+				meta: {
+					interface: 'boolean',
+					options: {
+						label: '$t:show_link_to_item',
+					},
+					width: 'half',
 				},
 			},
 		];

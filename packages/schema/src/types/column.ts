@@ -2,13 +2,14 @@ export interface Column {
 	name: string;
 	table: string;
 	data_type: string;
-	default_value: string | null;
+	default_value: string | number | boolean | null;
 	max_length: number | null;
 	numeric_precision: number | null;
 	numeric_scale: number | null;
 
 	is_nullable: boolean;
 	is_unique: boolean;
+	is_indexed: boolean;
 	is_primary_key: boolean;
 	is_generated: boolean;
 	generation_expression?: string | null;

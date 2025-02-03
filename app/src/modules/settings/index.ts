@@ -1,34 +1,42 @@
 import api from '@/api';
-import { defineModule } from '@directus/utils';
 import { useCollectionsStore } from '@/stores/collections';
 import { useFieldsStore } from '@/stores/fields';
 import { useFlowsStore } from '@/stores/flows';
 import RouterPass from '@/utils/router-passthrough';
+import { defineModule } from '@directus/extensions';
+import Appearance from './routes/appearance/item.vue';
 import Collections from './routes/data-model/collections/collections.vue';
 import FieldDetail from './routes/data-model/field-detail/field-detail.vue';
 import Fields from './routes/data-model/fields/fields.vue';
 import NewCollection from './routes/data-model/new-collection.vue';
+import Extensions from './routes/extensions/extensions.vue';
+import FlowOperationDetail from './routes/flows/components/operation-detail.vue';
+import FlowsDetail from './routes/flows/flow.vue';
+import FlowsOverview from './routes/flows/overview.vue';
+import MarketplaceAccount from './routes/marketplace/routes/account/account.vue';
+import MarketplaceExtension from './routes/marketplace/routes/extension/extension.vue';
+import MarketplaceRegistry from './routes/marketplace/routes/registry/registry.vue';
 import NotFound from './routes/not-found.vue';
+import PoliciesCollection from './routes/policies/collection.vue';
+import PoliciesItem from './routes/policies/item.vue';
+import NewPolicy from './routes/policies/add-new.vue';
 import PresetsCollection from './routes/presets/collection/collection.vue';
 import PresetsItem from './routes/presets/item.vue';
 import Project from './routes/project/project.vue';
 import NewRole from './routes/roles/add-new.vue';
 import RolesCollection from './routes/roles/collection.vue';
-import RolesItem from './routes/roles/item/item.vue';
-import RolesPermissionsDetail from './routes/roles/permissions-detail/permissions-detail.vue';
+import RolesItem from './routes/roles/item.vue';
 import RolesPublicItem from './routes/roles/public-item.vue';
+import SystemLogs from './routes/system-logs/logs.vue';
+import TranslationsCollection from './routes/translations/collection.vue';
+import TranslationsItem from './routes/translations/item.vue';
 import WebhooksCollection from './routes/webhooks/collection.vue';
 import WebhooksItem from './routes/webhooks/item.vue';
-import FlowsOverview from './routes/flows/overview.vue';
-import FlowsDetail from './routes/flows/flow.vue';
-import FlowOperationDetail from './routes/flows/components/operation-detail.vue';
-import TranslationStringsCollection from './routes/translation-strings/collection.vue';
 
 export default defineModule({
 	id: 'settings',
 	name: '$t:settings',
 	icon: 'settings',
-	color: 'var(--primary)',
 	routes: [
 		{
 			name: 'settings-data-model-redirect',
@@ -39,6 +47,11 @@ export default defineModule({
 			name: 'settings-project',
 			path: 'project',
 			component: Project,
+		},
+		{
+			name: 'settings-appearance',
+			path: 'appearance',
+			component: Appearance,
 		},
 		{
 			path: 'data-model',
@@ -56,6 +69,9 @@ export default defineModule({
 						{
 							path: '+',
 							name: 'settings-add-new',
+							meta: {
+								isFloatingView: true,
+							},
 							components: {
 								add: NewCollection,
 							},
@@ -93,11 +109,43 @@ export default defineModule({
 						{
 							path: ':field',
 							name: 'settings-fields-field',
+							meta: {
+								isFloatingView: true,
+							},
 							components: {
 								field: FieldDetail,
 							},
 						},
 					],
+				},
+			],
+		},
+		{
+			path: 'policies',
+			component: RouterPass,
+			children: [
+				{
+					name: 'settings-policies-collection',
+					path: '',
+					component: PoliciesCollection,
+					children: [
+						{
+							path: '+',
+							name: 'settings-add-new-policy',
+							meta: {
+								isFloatingView: true,
+							},
+							components: {
+								add: NewPolicy,
+							},
+						},
+					],
+				},
+				{
+					name: 'settings-policies-item',
+					path: ':primaryKey',
+					component: PoliciesItem,
+					props: true,
 				},
 			],
 		},
@@ -116,35 +164,22 @@ export default defineModule({
 							components: {
 								add: NewRole,
 							},
+							meta: {
+								isFloatingView: true,
+							},
 						},
 					],
 				},
 				{
+					name: 'settings-roles-public-item',
 					path: 'public',
 					component: RolesPublicItem,
-					props: true,
-					children: [
-						{
-							path: ':permissionKey',
-							components: {
-								permissionsDetail: RolesPermissionsDetail,
-							},
-						},
-					],
 				},
 				{
 					name: 'settings-roles-item',
 					path: ':primaryKey',
 					component: RolesItem,
 					props: true,
-					children: [
-						{
-							path: ':permissionKey',
-							components: {
-								permissionsDetail: RolesPermissionsDetail,
-							},
-						},
-					],
 				},
 			],
 		},
@@ -211,6 +246,9 @@ export default defineModule({
 						{
 							name: 'settings-flows-operation',
 							path: ':operationId',
+							meta: {
+								isFloatingView: true,
+							},
 							component: FlowOperationDetail,
 							props: true,
 						},
@@ -219,15 +257,54 @@ export default defineModule({
 			],
 		},
 		{
-			path: 'translation-strings',
+			path: 'extensions',
+			component: Extensions,
+		},
+		{
+			name: 'marketplace',
+			path: 'marketplace',
 			component: RouterPass,
 			children: [
 				{
-					name: 'settings-translation-strings-collection',
+					name: 'marketplace-registry',
 					path: '',
-					component: TranslationStringsCollection,
+					component: MarketplaceRegistry,
+				},
+				{
+					name: 'marketplace-account',
+					path: 'account/:accountId',
+					component: MarketplaceAccount,
+					props: true,
+				},
+				{
+					name: 'marketplace-extension',
+					path: 'extension/:extensionId',
+					component: MarketplaceExtension,
+					props: true,
 				},
 			],
+		},
+		{
+			path: 'translations',
+			component: RouterPass,
+			children: [
+				{
+					name: 'settings-translations-collection',
+					path: '',
+					component: TranslationsCollection,
+				},
+				{
+					name: 'settings-translations-item',
+					path: ':primaryKey',
+					component: TranslationsItem,
+					props: true,
+				},
+			],
+		},
+		{
+			name: 'settings-system-logs',
+			path: 'system-logs',
+			component: SystemLogs,
 		},
 		{
 			name: 'settings-not-found',
@@ -236,6 +313,6 @@ export default defineModule({
 		},
 	],
 	preRegisterCheck: (user) => {
-		return user.role.admin_access === true;
+		return user.admin_access === true;
 	},
 });

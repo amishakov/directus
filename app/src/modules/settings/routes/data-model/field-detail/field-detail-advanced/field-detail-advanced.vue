@@ -1,16 +1,4 @@
-<template>
-	<div class="content">
-		<field-detail-advanced-schema v-if="currentTab === 'schema'" />
-		<field-detail-advanced-relationship v-if="currentTab === 'relationship'" />
-		<field-detail-advanced-field v-if="currentTab === 'field'" />
-		<field-detail-advanced-interface v-if="currentTab === 'interface'" />
-		<field-detail-advanced-display v-if="currentTab === 'display'" />
-		<field-detail-advanced-validation v-if="currentTab === 'validation'" />
-		<field-detail-advanced-conditions v-if="currentTab === 'conditions'" />
-	</div>
-</template>
-
-<script lang="ts" setup>
+<script setup lang="ts">
 import FieldDetailAdvancedSchema from './field-detail-advanced-schema.vue';
 import FieldDetailAdvancedRelationship from './field-detail-advanced-relationship.vue';
 import FieldDetailAdvancedField from './field-detail-advanced-field.vue';
@@ -23,6 +11,18 @@ defineProps<{
 	currentTab: string;
 }>();
 </script>
+
+<template>
+	<div class="content">
+		<field-detail-advanced-schema v-if="currentTab === 'schema'" />
+		<field-detail-advanced-relationship v-if="currentTab === 'relationship'" />
+		<field-detail-advanced-field v-if="currentTab === 'field'" />
+		<field-detail-advanced-interface v-if="currentTab === 'interface'" />
+		<field-detail-advanced-display v-if="currentTab === 'display'" />
+		<field-detail-advanced-validation v-if="currentTab === 'validation'" />
+		<field-detail-advanced-conditions v-if="currentTab === 'conditions'" />
+	</div>
+</template>
 
 <style scoped>
 .content {
